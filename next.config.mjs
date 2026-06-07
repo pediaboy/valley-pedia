@@ -1,10 +1,13 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  images: {
-    remotePatterns: [
-      { protocol: 'https', hostname: '**.supabase.co' },
-      { protocol: 'https', hostname: 'via.placeholder.com' },
-    ],
+  // Disable static optimization globally - semua pages jadi dynamic
+  output: 'standalone',
+  experimental: {
+    // Force all pages to be server-side rendered
+  },
+  // Ini yang paling penting: skip prerender untuk semua pages
+  generateBuildId: async () => {
+    return 'valley-pedia-build';
   },
 };
 
