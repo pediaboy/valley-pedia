@@ -1,9 +1,10 @@
 'use client';
 export const dynamic = 'force-dynamic';
 import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
 import Link from 'next/link';
-import { Package, ShoppingBag, Users, DollarSign, TrendingUp, Star, FileText, Settings, Image, HelpCircle, MessageCircle } from 'lucide-react';
+import { Package, ShoppingBag, DollarSign, TrendingUp, Star, FileText, Settings, Image, HelpCircle, LogOut } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 
 const adminMenus = [
@@ -17,115 +18,163 @@ const adminMenus = [
 ];
 
 export default function AdminDashboard() {
-  const [stats, setStats] = useState({ orders: 0, revenue: 0, products: 0, users: 0 });
+  const router = useRouter();
+  const [stats, setStats] = useState({ orders: 0, revenue: 0, products: 0, pending: 0 });
   const [recentOrders, setRecentOrders] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    // Guard: cek apakah sudah login
+    if (typeof window !== 'undefined') {
+      const isAdmin = sessionStorage.getItem('vp_admin');
+      if (!isAdmin) {
+        router.replace('/admin');
+        return;
+      }
+    }
+
     Promise.all([
-      supabase.from('orders').select('id, total_amount, status, customer_name, payment_method, created_at').order('created_at', { ascending: false }).limit(5),
-      supabase.from('orders').select('total_amount', { count: 'exact' }).eq('status', 'paid'),
-      supabase.from('products').select('id', { count: 'exact' }),
-    ]).then(([ordersRes, revenueRes, productsRes]) => {
+      supabase.from('orders').select('id, total_amount, status, customer_name, payment_method, order_id, created_at').order('created_at', { ascending: false }).limit(5),
+      supabase.from('orders').select('total_amount').eq('status', 'paid'),
+      supabase.from('orders').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
+      supabase.from('products').select('id', { count: 'exact', head: true }),
+    ]).then(([ordersRes, revenueRes, pendingRes, productsRes]) => {
       setRecentOrders(ordersRes.data || []);
-      const rev = revenueRes.data?.reduce((a, b) => a + (b.total_amount || 0), 0) || 0;
+      const rev = (revenueRes.data || []).reduce((a: number, b: any) => a + (b.total_amount || 0), 0);
       setStats({
-        orders: revenueRes.count || 0,
+        orders: ordersRes.data?.length || 0,
         revenue: rev,
         products: productsRes.count || 0,
-        users: 0,
+        pending: pendingRes.count || 0,
       });
       setLoading(false);
     });
-  }, []);
+  }, [router]);
 
   const statusColor: Record<string, string> = {
     pending: '#f59e0b', paid: '#4ade80', completed: '#00c3ff',
     cancelled: '#ef4444', expired: '#6b7280', failed: '#ef4444',
   };
 
+  const handleLogout = () => {
+    sessionStorage.removeItem('vp_admin');
+    router.push('/admin');
+  };
+
   return (
-    <div className="min-h-screen px-4 py-8 max-w-7xl mx-auto">
-      {/* Header */}
-      <div className="flex items-center justify-between mb-8">
-        <div>
-          <div style={{ color: 'rgba(255,255,255,0.4)', fontSize: '0.7rem', letterSpacing: '0.15em', marginBottom: '0.25rem' }}>VALLEY.PEDIA</div>
-          <h1 style={{ fontFamily: 'Orbitron', fontSize: '1.25rem', fontWeight: 800 }} className="gradient-text">Admin Panel</h1>
-        </div>
-        <div className="flex items-center gap-2 p-2 rounded-xl glass-card">
-          <div className="w-8 h-8 rounded-full" style={{ background: 'linear-gradient(135deg, #00c3ff, #8b5cf6)' }} />
-          <div style={{ fontSize: '0.8rem', fontWeight: 600 }}>Admin Valley</div>
-        </div>
-      </div>
+    <div style={{ minHeight: '100vh', background: '#080808', padding: '1.5rem 1rem' }}>
+      <div style={{
+        position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, pointerEvents: 'none',
+        background: 'radial-gradient(ellipse at 50% 0%, rgba(0,195,255,0.06) 0%, transparent 60%)',
+      }} />
 
-      {/* Stats */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-        {[
-          { label: 'Total Order', value: stats.orders.toLocaleString(), icon: ShoppingBag, color: '#00c3ff', bg: 'rgba(0,195,255,0.08)' },
-          { label: 'Pending', value: recentOrders.filter(o => o.status === 'pending').length, icon: TrendingUp, color: '#f59e0b', bg: 'rgba(245,158,11,0.08)' },
-          { label: 'Total Produk', value: stats.products, icon: Package, color: '#8b5cf6', bg: 'rgba(139,92,246,0.08)' },
-          { label: 'Pendapatan', value: `Rp ${(stats.revenue/1000000).toFixed(1)}Jt`, icon: DollarSign, color: '#4ade80', bg: 'rgba(74,222,128,0.08)' },
-        ].map((s, i) => (
-          <motion.div key={i} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }}
-            className="stat-card" style={{ '--color': s.color } as any}>
-            <div className="flex items-start justify-between">
-              <div>
-                <div style={{ color: 'rgba(255,255,255,0.5)', fontSize: '0.7rem', letterSpacing: '0.1em', marginBottom: '0.5rem' }}>{s.label}</div>
-                <div style={{ fontFamily: 'Orbitron', fontSize: '1.25rem', fontWeight: 800, color: s.color }}>{s.value}</div>
-              </div>
-              <div className="p-2 rounded-lg" style={{ background: s.bg }}>
-                <s.icon size={20} style={{ color: s.color }} />
-              </div>
+      <div style={{ maxWidth: 800, margin: '0 auto' }}>
+        {/* Header */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+          <div>
+            <div style={{ fontFamily: 'Orbitron,sans-serif', fontSize: '0.6rem', letterSpacing: '0.3em', color: 'rgba(255,255,255,0.35)', marginBottom: 4 }}>
+              VALLEY.PEDIA
             </div>
-          </motion.div>
-        ))}
-      </div>
+            <div style={{ fontFamily: 'Orbitron,sans-serif', fontSize: '1rem', color: '#00c3ff' }}>Admin Panel</div>
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <Link href="/" style={{
+              padding: '6px 14px', borderRadius: 8, fontSize: '0.72rem', color: 'rgba(255,255,255,0.5)',
+              border: '1px solid rgba(255,255,255,0.1)', textDecoration: 'none',
+            }}>← Website</Link>
+            <button onClick={handleLogout} style={{
+              padding: '6px 14px', borderRadius: 8, fontSize: '0.72rem', cursor: 'pointer',
+              background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)',
+              color: '#f87171', display: 'flex', alignItems: 'center', gap: 4,
+            }}>
+              <LogOut size={12} /> Logout
+            </button>
+          </div>
+        </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Stats */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,1fr)', gap: 12, marginBottom: '1.5rem' }}>
+          {[
+            { label: 'Total Order', value: stats.orders, icon: ShoppingBag, color: '#00c3ff' },
+            { label: 'Pending', value: stats.pending, icon: TrendingUp, color: '#f59e0b' },
+            { label: 'Total Produk', value: stats.products, icon: Package, color: '#8b5cf6' },
+            { label: 'Pendapatan', value: `Rp ${(stats.revenue / 1000).toFixed(0)}K`, icon: DollarSign, color: '#4ade80' },
+          ].map((s, i) => (
+            <motion.div key={i} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.05 * i }}
+              className="glass-card" style={{ borderRadius: 14, padding: '1.2rem', display: 'flex', alignItems: 'center', gap: 12 }}>
+              <div style={{ width: 40, height: 40, borderRadius: 10, background: `${s.color}15`, border: `1px solid ${s.color}30`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <s.icon size={18} style={{ color: s.color }} />
+              </div>
+              <div>
+                <div style={{ fontSize: '0.65rem', color: 'rgba(255,255,255,0.4)', marginBottom: 2 }}>{s.label}</div>
+                <div style={{ fontFamily: 'Orbitron,sans-serif', fontSize: '1.1rem', fontWeight: 700, color: s.color }}>{loading ? '—' : s.value}</div>
+              </div>
+            </motion.div>
+          ))}
+        </div>
+
         {/* Recent Orders */}
-        <div className="lg:col-span-2 glass-card rounded-xl p-5">
-          <div className="flex items-center justify-between mb-4">
-            <h2 style={{ fontFamily: 'Orbitron', fontSize: '0.8rem', color: '#00c3ff', letterSpacing: '0.1em' }}>ORDER TERBARU</h2>
-            <Link href="/admin/orders" style={{ color: 'rgba(255,255,255,0.4)', fontSize: '0.75rem' }}>Lihat Semua →</Link>
+        <div className="glass-card" style={{ borderRadius: 16, padding: '1.2rem', marginBottom: '1.5rem' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+            <div style={{ fontSize: '0.65rem', letterSpacing: '0.15em', color: 'rgba(255,255,255,0.4)' }}>ORDER TERBARU</div>
+            <Link href="/admin/orders" style={{ fontSize: '0.72rem', color: '#00c3ff', textDecoration: 'none' }}>Lihat Semua →</Link>
           </div>
           {loading ? (
-            <div className="space-y-3">
-              {[1,2,3].map(i => <div key={i} className="h-14 rounded-lg animate-pulse" style={{ background: 'rgba(255,255,255,0.03)' }} />)}
-            </div>
+            <div style={{ textAlign: 'center', padding: '1rem', color: 'rgba(255,255,255,0.3)', fontSize: '0.8rem' }}>Memuat...</div>
+          ) : recentOrders.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: '1rem', color: 'rgba(255,255,255,0.3)', fontSize: '0.8rem' }}>Belum ada order</div>
           ) : (
-            <table className="table-galaxy">
-              <thead>
-                <tr><th>Pelanggan</th><th>Nominal</th><th>Metode</th><th>Status</th></tr>
-              </thead>
-              <tbody>
-                {recentOrders.map(order => (
-                  <tr key={order.id}>
-                    <td style={{ color: 'rgba(255,255,255,0.8)' }}>{order.customer_name}</td>
-                    <td style={{ color: '#00c3ff', fontFamily: 'Orbitron', fontSize: '0.8rem' }}>Rp {order.total_amount?.toLocaleString('id-ID')}</td>
-                    <td style={{ color: 'rgba(255,255,255,0.5)', textTransform: 'uppercase', fontSize: '0.75rem' }}>{order.payment_method}</td>
-                    <td><span style={{ color: statusColor[order.status] || 'white', fontSize: '0.75rem', fontWeight: 600 }}>{order.status?.toUpperCase()}</span></td>
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.78rem' }}>
+                <thead>
+                  <tr style={{ color: 'rgba(255,255,255,0.3)', fontSize: '0.65rem' }}>
+                    {['Order ID', 'Pelanggan', 'Nominal', 'Metode', 'Status'].map(h => (
+                      <th key={h} style={{ textAlign: 'left', padding: '0 0.75rem 0.75rem', letterSpacing: '0.08em', whiteSpace: 'nowrap' }}>{h}</th>
+                    ))}
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {recentOrders.map((order: any) => (
+                    <tr key={order.id} style={{ borderTop: '1px solid rgba(255,255,255,0.05)' }}>
+                      <td style={{ padding: '0.7rem 0.75rem', color: '#00c3ff', fontFamily: 'monospace', whiteSpace: 'nowrap' }}>{order.order_id || order.id?.slice(0,8)}</td>
+                      <td style={{ padding: '0.7rem 0.75rem', color: 'rgba(255,255,255,0.8)', whiteSpace: 'nowrap' }}>{order.customer_name}</td>
+                      <td style={{ padding: '0.7rem 0.75rem', color: '#fff', whiteSpace: 'nowrap' }}>Rp {order.total_amount?.toLocaleString('id-ID')}</td>
+                      <td style={{ padding: '0.7rem 0.75rem', color: 'rgba(255,255,255,0.5)', whiteSpace: 'nowrap' }}>{order.payment_method}</td>
+                      <td style={{ padding: '0.7rem 0.75rem' }}>
+                        <span style={{
+                          padding: '3px 10px', borderRadius: 999, fontSize: '0.65rem', fontWeight: 600,
+                          color: statusColor[order.status] || '#fff',
+                          background: `${statusColor[order.status] || '#fff'}18`,
+                          border: `1px solid ${statusColor[order.status] || '#fff'}30`,
+                          whiteSpace: 'nowrap',
+                        }}>{order.status?.toUpperCase()}</span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
         </div>
 
-        {/* Admin Menu */}
-        <div className="glass-card rounded-xl p-5">
-          <h2 style={{ fontFamily: 'Orbitron', fontSize: '0.8rem', color: '#8b5cf6', letterSpacing: '0.1em', marginBottom: '1rem' }}>MENU ADMIN</h2>
-          <div className="space-y-2">
-            {adminMenus.map((item, i) => (
-              <Link key={item.href} href={item.href} className="menu-item">
-                <div className="flex items-center gap-3">
-                  <item.icon size={16} style={{ color: item.color }} />
-                  <span style={{ fontSize: '0.85rem', fontWeight: 500 }}>{item.label}</span>
+        {/* Menu Admin */}
+        <div style={{ fontSize: '0.65rem', letterSpacing: '0.15em', color: 'rgba(255,255,255,0.4)', marginBottom: '0.75rem' }}>MENU ADMIN</div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,1fr)', gap: 10 }}>
+          {adminMenus.map((item, i) => (
+            <motion.div key={i} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.05 * i }}>
+              <Link href={item.href} style={{
+                display: 'flex', alignItems: 'center', gap: 10, padding: '0.9rem 1rem',
+                background: 'rgba(15,15,31,0.6)', border: '1px solid rgba(139,92,246,0.15)',
+                borderRadius: 12, textDecoration: 'none', color: '#fff', fontSize: '0.82rem',
+                transition: 'all 0.2s',
+              }}>
+                <div style={{ width: 32, height: 32, borderRadius: 8, background: `${item.color}15`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                  <item.icon size={15} style={{ color: item.color }} />
                 </div>
-                <span style={{ color: 'rgba(255,255,255,0.3)', fontSize: '0.7rem' }}>→</span>
+                {item.label}
               </Link>
-            ))}
-          </div>
-          <Link href="/" className="btn-neon mt-4 py-2 px-4 rounded-lg text-xs w-full text-center block">← Kembali ke Website</Link>
+            </motion.div>
+          ))}
         </div>
       </div>
     </div>
