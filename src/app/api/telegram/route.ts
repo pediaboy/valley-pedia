@@ -1,19 +1,20 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-// Token diambil dari env — pasang di Vercel environment variables
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '';
-const WA_NUMBER = '6282172222494';
+const ADMIN_CHAT_USERNAME = 'riqqboy'; // admin Telegram
+const WA_CONFIRM = '6282172222494';
 
-async function sendMessage(chatId: string | number, text: string, parseMode: string = 'HTML') {
+async function sendMsg(chatId: string | number, text: string) {
   if (!BOT_TOKEN) return;
-  await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
+  const res = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ chat_id: chatId, text, parse_mode: parseMode }),
+    body: JSON.stringify({ chat_id: chatId, text, parse_mode: 'HTML' }),
   });
+  return res.json();
 }
 
-async function getSupabase() {
+async function getDB() {
   const { createClient } = await import('@supabase/supabase-js');
   return createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -33,207 +34,246 @@ export async function POST(req: NextRequest) {
     const cmd = parts[0];
     const args = parts.slice(1);
 
-    const supabase = await getSupabase();
+    const db = await getDB();
 
     switch (cmd) {
-      // ===== INFO =====
       case '/start':
-      case '/help': {
-        await sendMessage(chatId,
-          `🌌 <b>VALLEY.PEDIA BOT</b>\n` +
-          `━━━━━━━━━━━━━━━━━━\n\n` +
-          `Halo, Admin! Ini daftar command yang tersedia:\n\n` +
+      case '/help':
+        await sendMsg(chatId,
+          `🎮 <b>VALLEY.PEDIA BOT</b>\n` +
+          `by @${ADMIN_CHAT_USERNAME}\n` +
+          `━━━━━━━━━━━━━━━━━━━\n\n` +
           `📊 <b>STATISTIK</b>\n` +
-          `/statistic — Ringkasan order & pendapatan\n` +
-          `/revenue — Pendapatan detail per status\n\n` +
+          `/statistic — Ringkasan lengkap\n` +
+          `/revenue — Pendapatan per status\n\n` +
           `📦 <b>PRODUK</b>\n` +
-          `/listproduct — Semua produk aktif\n` +
-          `/addproduct Nama|Harga|Deskripsi — Tambah produk\n\n` +
+          `/listproduct — Semua produk\n` +
+          `/addproduct Nama|Harga|Desc — Tambah\n` +
+          `/deleteproduct NamaProduk — Hapus\n\n` +
           `🛍️ <b>ORDER</b>\n` +
           `/orders — 10 order terbaru\n` +
-          `/pendingorders — Semua order pending\n` +
-          `/setstatus VP-xxx [paid|completed|cancelled] — Ubah status\n` +
-          `/cariorder NamaPelanggan — Cari order by nama\n\n` +
+          `/pendingorders — Order pending\n` +
+          `/setstatus VP-xxx paid — Ubah status\n` +
+          `/cariorder Nama — Cari order\n\n` +
           `⭐ <b>TESTIMONI</b>\n` +
-          `/addtestimonial Nama|Rating|Komentar\n\n` +
-          `ℹ️ <b>LAINNYA</b>\n` +
-          `/ping — Cek bot aktif\n` +
-          `/help — Tampilkan pesan ini\n\n` +
-          `━━━━━━━━━━━━━━━━━━\n` +
-          `WA Admin: <code>${WA_NUMBER}</code>`
+          `/testilist — Lihat testimoni terbaru\n` +
+          `/addtesti Nama|Rating|Komentar\n` +
+          `/deletetesti ID\n\n` +
+          `⚙️ <b>SETTINGS</b>\n` +
+          `/setwa NomorBaru — Ganti nomor WA\n` +
+          `/setsetting key|value — Simpan setting\n` +
+          `/getsettings — Lihat semua settings\n\n` +
+          `📝 <b>FAQ & KONTEN</b>\n` +
+          `/addfaq Pertanyaan|Jawaban\n` +
+          `/listfaq — Lihat semua FAQ\n\n` +
+          `/ping — Cek bot aktif`
         );
         break;
-      }
 
-      case '/ping': {
-        await sendMessage(chatId, '✅ <b>Bot aktif!</b> VALLEY.PEDIA online.');
+      case '/ping':
+        await sendMsg(chatId, `✅ <b>VALLEY.PEDIA Bot aktif!</b>\nWA Admin: ${WA_CONFIRM}`);
         break;
-      }
 
       // ===== STATISTIK =====
       case '/statistic': {
-        const [{ count: totalOrder }, { count: totalProduct }, paidRes] = await Promise.all([
-          supabase.from('orders').select('*', { count: 'exact', head: true }),
-          supabase.from('products').select('*', { count: 'exact', head: true }),
-          supabase.from('orders').select('total_amount').eq('status', 'paid'),
+        const [tot, paid, pend, prod] = await Promise.all([
+          db.from('orders').select('*', { count: 'exact', head: true }),
+          db.from('orders').select('total_amount').eq('status', 'paid'),
+          db.from('orders').select('*', { count: 'exact', head: true }).eq('status', 'pending'),
+          db.from('products').select('*', { count: 'exact', head: true }),
         ]);
-        const { count: pendingCount } = await supabase.from('orders').select('*', { count: 'exact', head: true }).eq('status', 'pending');
-        const totalRev = (paidRes.data || []).reduce((a: number, b: any) => a + (b.total_amount || 0), 0);
-        await sendMessage(chatId,
+        const rev = (paid.data || []).reduce((a: number, b: any) => a + (b.total_amount || 0), 0);
+        await sendMsg(chatId,
           `📊 <b>STATISTIK VALLEY.PEDIA</b>\n━━━━━━━━━━━━━━━\n\n` +
-          `🛍️ Total Order: <b>${totalOrder}</b>\n` +
-          `⏳ Order Pending: <b>${pendingCount}</b>\n` +
-          `📦 Total Produk: <b>${totalProduct}</b>\n` +
-          `💰 Pendapatan (paid): <b>Rp ${totalRev.toLocaleString('id-ID')}</b>\n\n` +
-          `Update: ${new Date().toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' })} WIB`
+          `🛍️ Total Order: <b>${tot.count || 0}</b>\n` +
+          `⏳ Pending: <b>${pend.count || 0}</b>\n` +
+          `✅ Paid: <b>${paid.data?.length || 0}</b>\n` +
+          `📦 Produk Aktif: <b>${prod.count || 0}</b>\n` +
+          `💰 Pendapatan: <b>Rp ${rev.toLocaleString('id-ID')}</b>\n\n` +
+          `🕐 ${new Date().toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' })} WIB`
         );
         break;
       }
 
       case '/revenue': {
-        const { data: orders } = await supabase.from('orders').select('status, total_amount');
+        const { data } = await db.from('orders').select('status, total_amount');
         const byStatus: Record<string, number> = {};
-        (orders || []).forEach((o: any) => {
-          byStatus[o.status] = (byStatus[o.status] || 0) + (o.total_amount || 0);
-        });
+        (data || []).forEach((o: any) => { byStatus[o.status] = (byStatus[o.status] || 0) + (o.total_amount || 0); });
         const lines = Object.entries(byStatus).map(([s, v]) => `• ${s}: Rp ${v.toLocaleString('id-ID')}`).join('\n');
-        await sendMessage(chatId, `💰 <b>PENDAPATAN PER STATUS</b>\n━━━━━━━━━━━━━\n\n${lines || 'Belum ada data.'}`);
+        await sendMsg(chatId, `💰 <b>PENDAPATAN PER STATUS</b>\n━━━━━━━━━━\n\n${lines || 'Belum ada data.'}`);
         break;
       }
 
       // ===== PRODUK =====
       case '/listproduct': {
-        const { data } = await supabase.from('products').select('name, price, status').order('created_at', { ascending: false }).limit(15);
-        if (!data?.length) { await sendMessage(chatId, '📦 Belum ada produk.'); break; }
+        const { data } = await db.from('products').select('id, name, price, status').order('created_at', { ascending: false }).limit(15);
+        if (!data?.length) { await sendMsg(chatId, '📦 Belum ada produk.'); break; }
         const list = data.map((p: any, i: number) =>
-          `${i + 1}. <b>${p.name}</b> — Rp ${p.price?.toLocaleString('id-ID')} [${p.status}]`
-        ).join('\n');
-        await sendMessage(chatId, `📦 <b>DAFTAR PRODUK</b>\n━━━━━━━━━━━━━\n\n${list}`);
+          `${i+1}. <b>${p.name}</b>\n   Rp ${p.price?.toLocaleString('id-ID')} [${p.status}]\n   ID: <code>${p.id}</code>`
+        ).join('\n\n');
+        await sendMsg(chatId, `📦 <b>DAFTAR PRODUK</b>\n━━━━━━━━━━\n\n${list}`);
         break;
       }
 
       case '/addproduct': {
-        // Format: /addproduct Nama Produk|50000|Deskripsi produk
         const raw = args.join(' ');
-        const [name, priceStr, ...descParts] = raw.split('|');
-        if (!name || !priceStr) {
-          await sendMessage(chatId, '❌ Format: /addproduct Nama|Harga|Deskripsi');
-          break;
-        }
-        const { error } = await supabase.from('products').insert({
-          name: name.trim(),
-          price: parseInt(priceStr.trim()),
-          description: descParts.join('|').trim() || '',
-          status: 'active',
-        });
-        await sendMessage(chatId, error ? `❌ Gagal: ${error.message}` : `✅ Produk <b>${name.trim()}</b> berhasil ditambahkan!`);
+        const [name, priceStr, ...descP] = raw.split('|');
+        if (!name || !priceStr) { await sendMsg(chatId, '❌ Format: /addproduct Nama|Harga|Deskripsi'); break; }
+        const { error } = await db.from('products').insert({ name: name.trim(), price: parseInt(priceStr.trim()), description: descP.join('|').trim(), status: 'active' });
+        await sendMsg(chatId, error ? `❌ ${error.message}` : `✅ Produk <b>${name.trim()}</b> ditambahkan!`);
+        break;
+      }
+
+      case '/deleteproduct': {
+        const name = args.join(' ').trim();
+        if (!name) { await sendMsg(chatId, '❌ Format: /deleteproduct NamaProduk'); break; }
+        const { error } = await db.from('products').delete().ilike('name', `%${name}%`);
+        await sendMsg(chatId, error ? `❌ ${error.message}` : `✅ Produk dengan nama "<b>${name}</b>" dihapus.`);
         break;
       }
 
       // ===== ORDER =====
       case '/orders': {
-        const { data } = await supabase.from('orders').select('order_id, customer_name, total_amount, status, payment_method, created_at').order('created_at', { ascending: false }).limit(10);
-        if (!data?.length) { await sendMessage(chatId, '🛍️ Belum ada order.'); break; }
+        const { data } = await db.from('orders').select('order_id, customer_name, customer_whatsapp, total_amount, status, payment_method, created_at').order('created_at', { ascending: false }).limit(10);
+        if (!data?.length) { await sendMsg(chatId, '🛍️ Belum ada order.'); break; }
         const list = data.map((o: any) =>
-          `• <code>${o.order_id}</code>\n  👤 ${o.customer_name} | Rp ${o.total_amount?.toLocaleString('id-ID')} | <b>${o.status}</b>`
+          `• <code>${o.order_id}</code>\n  👤 ${o.customer_name} | 📱 ${o.customer_whatsapp}\n  💰 Rp ${o.total_amount?.toLocaleString('id-ID')} | <b>${o.status}</b>`
         ).join('\n\n');
-        await sendMessage(chatId, `🛍️ <b>10 ORDER TERBARU</b>\n━━━━━━━━━━━━━\n\n${list}`);
+        await sendMsg(chatId, `🛍️ <b>10 ORDER TERBARU</b>\n━━━━━━━━━━\n\n${list}`);
         break;
       }
 
       case '/pendingorders': {
-        const { data } = await supabase.from('orders').select('order_id, customer_name, customer_whatsapp, total_amount, payment_method, created_at').eq('status', 'pending').order('created_at', { ascending: false });
-        if (!data?.length) { await sendMessage(chatId, '✅ Tidak ada order pending saat ini!'); break; }
+        const { data } = await db.from('orders').select('order_id, customer_name, customer_whatsapp, total_amount, payment_method').eq('status', 'pending').order('created_at', { ascending: false });
+        if (!data?.length) { await sendMsg(chatId, '✅ Tidak ada order pending!'); break; }
         const list = data.map((o: any) =>
-          `• <code>${o.order_id}</code>\n  👤 ${o.customer_name} | 📱 ${o.customer_whatsapp}\n  💰 Rp ${o.total_amount?.toLocaleString('id-ID')} via ${o.payment_method}`
+          `• <code>${o.order_id}</code>\n  👤 ${o.customer_name} | 📱 ${o.customer_whatsapp}\n  Rp ${o.total_amount?.toLocaleString('id-ID')} via ${o.payment_method}`
         ).join('\n\n');
-        await sendMessage(chatId, `⏳ <b>ORDER PENDING (${data.length})</b>\n━━━━━━━━━━━━━\n\n${list}`);
+        await sendMsg(chatId, `⏳ <b>PENDING (${data.length})</b>\n━━━━━━━━━━\n\n${list}`);
         break;
       }
 
       case '/setstatus': {
         const [orderId, newStatus] = args;
-        const validStatus = ['paid', 'completed', 'cancelled', 'pending', 'expired', 'failed'];
-        if (!orderId || !newStatus) {
-          await sendMessage(chatId, '❌ Format: /setstatus VP-xxxx paid\n\nStatus valid: paid | completed | cancelled | pending | expired | failed');
-          break;
-        }
-        if (!validStatus.includes(newStatus)) {
-          await sendMessage(chatId, `❌ Status tidak valid. Pilih: ${validStatus.join(' | ')}`);
-          break;
-        }
-        const { error } = await supabase.from('orders').update({ status: newStatus }).eq('order_id', orderId);
-        await sendMessage(chatId, error
-          ? `❌ Gagal update: ${error.message}`
-          : `✅ Order <code>${orderId}</code> berhasil diubah ke <b>${newStatus}</b>`
-        );
+        const valid = ['paid','completed','cancelled','pending','expired','failed'];
+        if (!orderId || !newStatus) { await sendMsg(chatId, '❌ Format: /setstatus VP-xxx paid'); break; }
+        if (!valid.includes(newStatus)) { await sendMsg(chatId, `❌ Status valid: ${valid.join(' | ')}`); break; }
+        const { error } = await db.from('orders').update({ status: newStatus }).eq('order_id', orderId);
+        await sendMsg(chatId, error ? `❌ ${error.message}` : `✅ <code>${orderId}</code> → <b>${newStatus}</b>`);
         break;
       }
 
       case '/cariorder': {
-        const keyword = args.join(' ').trim();
-        if (!keyword) { await sendMessage(chatId, '❌ Format: /cariorder NamaPelanggan'); break; }
-        const { data } = await supabase.from('orders').select('order_id, customer_name, customer_whatsapp, total_amount, status').ilike('customer_name', `%${keyword}%`).limit(5);
-        if (!data?.length) { await sendMessage(chatId, `🔍 Tidak ada order dengan nama "${keyword}"`); break; }
+        const kw = args.join(' ').trim();
+        if (!kw) { await sendMsg(chatId, '❌ Format: /cariorder Nama'); break; }
+        const { data } = await db.from('orders').select('order_id, customer_name, customer_whatsapp, total_amount, status').ilike('customer_name', `%${kw}%`).limit(5);
+        if (!data?.length) { await sendMsg(chatId, `🔍 Tidak ada order untuk "${kw}"`); break; }
         const list = data.map((o: any) =>
           `• <code>${o.order_id}</code> — ${o.customer_name}\n  📱 ${o.customer_whatsapp} | Rp ${o.total_amount?.toLocaleString('id-ID')} | <b>${o.status}</b>`
         ).join('\n\n');
-        await sendMessage(chatId, `🔍 <b>Hasil Pencarian: "${keyword}"</b>\n\n${list}`);
+        await sendMsg(chatId, `🔍 <b>Hasil: "${kw}"</b>\n\n${list}`);
         break;
       }
 
       // ===== TESTIMONI =====
-      case '/addtestimonial': {
-        const raw = args.join(' ');
-        const [name, ratingStr, ...commentParts] = raw.split('|');
-        if (!name || !ratingStr || !commentParts.length) {
-          await sendMessage(chatId, '❌ Format: /addtestimonial Nama|Rating(1-5)|Komentar kamu di sini');
-          break;
-        }
-        const rating = parseInt(ratingStr.trim());
-        if (isNaN(rating) || rating < 1 || rating > 5) {
-          await sendMessage(chatId, '❌ Rating harus angka 1–5');
-          break;
-        }
-        const { error } = await supabase.from('testimonials').insert({
-          name: name.trim(),
-          rating,
-          comment: commentParts.join('|').trim(),
-        });
-        await sendMessage(chatId, error
-          ? `❌ Gagal: ${error.message}`
-          : `✅ Testimoni dari <b>${name.trim()}</b> (⭐${rating}) berhasil ditambahkan!`
-        );
+      case '/testilist': {
+        const { data } = await db.from('testimonials').select('id, name, rating, comment').order('created_at', { ascending: false }).limit(10);
+        if (!data?.length) { await sendMsg(chatId, '⭐ Belum ada testimoni.'); break; }
+        const list = data.map((t: any) =>
+          `• <b>${t.name}</b> ⭐${t.rating}\n  "${t.comment?.slice(0,80)}..."\n  ID: <code>${t.id}</code>`
+        ).join('\n\n');
+        await sendMsg(chatId, `⭐ <b>TESTIMONI TERBARU</b>\n━━━━━━━━━━\n\n${list}`);
         break;
       }
 
-      default: {
-        if (text.startsWith('/')) {
-          await sendMessage(chatId, `❓ Command tidak dikenali.\n\nKetik /help untuk lihat daftar command.`);
-        }
+      case '/addtesti': {
+        const raw = args.join(' ');
+        const [name, ratingStr, ...cP] = raw.split('|');
+        if (!name || !ratingStr || !cP.length) { await sendMsg(chatId, '❌ Format: /addtesti Nama|Rating|Komentar'); break; }
+        const rating = parseInt(ratingStr.trim());
+        if (isNaN(rating) || rating < 1 || rating > 5) { await sendMsg(chatId, '❌ Rating 1-5'); break; }
+        const { error } = await db.from('testimonials').insert({ name: name.trim(), rating, comment: cP.join('|').trim() });
+        await sendMsg(chatId, error ? `❌ ${error.message}` : `✅ Testimoni <b>${name.trim()}</b> (⭐${rating}) ditambahkan!`);
+        break;
       }
+
+      case '/deletetesti': {
+        const id = args[0];
+        if (!id) { await sendMsg(chatId, '❌ Format: /deletetesti ID'); break; }
+        const { error } = await db.from('testimonials').delete().eq('id', id);
+        await sendMsg(chatId, error ? `❌ ${error.message}` : `✅ Testimoni <code>${id}</code> dihapus.`);
+        break;
+      }
+
+      // ===== SETTINGS =====
+      case '/getsettings': {
+        const { data } = await db.from('settings').select('key, value').order('key');
+        if (!data?.length) { await sendMsg(chatId, '⚙️ Belum ada settings.'); break; }
+        const list = data.map((s: any) => `• <b>${s.key}</b>: ${s.value}`).join('\n');
+        await sendMsg(chatId, `⚙️ <b>SETTINGS</b>\n━━━━━━━━━━\n\n${list}`);
+        break;
+      }
+
+      case '/setsetting': {
+        const raw = args.join(' ');
+        const sepIdx = raw.indexOf('|');
+        if (sepIdx === -1) { await sendMsg(chatId, '❌ Format: /setsetting key|value'); break; }
+        const key = raw.slice(0, sepIdx).trim();
+        const value = raw.slice(sepIdx + 1).trim();
+        const { error } = await db.from('settings').upsert({ key, value }, { onConflict: 'key' });
+        await sendMsg(chatId, error ? `❌ ${error.message}` : `✅ Setting <b>${key}</b> = ${value}`);
+        break;
+      }
+
+      case '/setwa': {
+        const newWa = args[0];
+        if (!newWa) { await sendMsg(chatId, '❌ Format: /setwa 628xxx'); break; }
+        const { error } = await db.from('settings').upsert({ key: 'wa_number', value: newWa }, { onConflict: 'key' });
+        await sendMsg(chatId, error ? `❌ ${error.message}` : `✅ Nomor WA diubah ke <b>${newWa}</b>`);
+        break;
+      }
+
+      // ===== FAQ =====
+      case '/addfaq': {
+        const raw = args.join(' ');
+        const sepIdx = raw.indexOf('|');
+        if (sepIdx === -1) { await sendMsg(chatId, '❌ Format: /addfaq Pertanyaan|Jawaban'); break; }
+        const question = raw.slice(0, sepIdx).trim();
+        const answer = raw.slice(sepIdx + 1).trim();
+        const { error } = await db.from('faqs').insert({ question, answer, order: 99 });
+        await sendMsg(chatId, error ? `❌ ${error.message}` : `✅ FAQ ditambahkan: <b>${question}</b>`);
+        break;
+      }
+
+      case '/listfaq': {
+        const { data } = await db.from('faqs').select('id, question').order('order', { ascending: true }).limit(15);
+        if (!data?.length) { await sendMsg(chatId, '📝 Belum ada FAQ.'); break; }
+        const list = data.map((f: any, i: number) => `${i+1}. ${f.question}\n   ID: <code>${f.id}</code>`).join('\n\n');
+        await sendMsg(chatId, `📝 <b>DAFTAR FAQ</b>\n━━━━━━━━━━\n\n${list}`);
+        break;
+      }
+
+      default:
+        if (text.startsWith('/')) {
+          await sendMsg(chatId, `❓ Command tidak dikenali. Ketik /help`);
+        }
     }
   } catch (err: any) {
-    console.error('Telegram bot error:', err);
+    console.error('Bot error:', err?.message || err);
   }
-
   return NextResponse.json({ ok: true });
 }
 
-// Endpoint GET untuk set webhook via URL (opsional, bisa juga manual)
 export async function GET(req: NextRequest) {
   const url = new URL(req.url);
-  const action = url.searchParams.get('action');
-  if (action === 'setwebhook') {
-    const webhookUrl = url.searchParams.get('url');
-    if (!webhookUrl || !BOT_TOKEN) return NextResponse.json({ error: 'Missing url or token' }, { status: 400 });
-    const res = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/setWebhook`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ url: webhookUrl }),
+  if (url.searchParams.get('action') === 'setwebhook') {
+    const wUrl = url.searchParams.get('url');
+    if (!wUrl || !BOT_TOKEN) return NextResponse.json({ error: 'Missing params' }, { status: 400 });
+    const r = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/setWebhook`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url: wUrl, allowed_updates: ['message'] }),
     });
-    const data = await res.json();
-    return NextResponse.json(data);
+    return NextResponse.json(await r.json());
   }
-  return NextResponse.json({ status: 'Valley.Pedia Telegram Bot active' });
+  return NextResponse.json({ status: 'VALLEY.PEDIA Bot active', admin: `@${ADMIN_CHAT_USERNAME}` });
 }
